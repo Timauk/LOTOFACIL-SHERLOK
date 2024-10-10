@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jogo do Sherlock 5.0 - Otimizado</title>
+    <style>
+        /* Layout melhorado para clareza */
+        .progress-container {
+            width: 100%;
+            background-color: #f3f3f3;
+            border: 1px solid #ccc;
+            height: 20px;
+            margin: 10px 0;
+        }
+        .progress-bar {
+            height: 100%;
+            width: 0;
+            background-color: #4caf50;
+            text-align: center;
+            color: white;
+            line-height: 20px;
+            transition: width 0.3s;
+        }
+        input[type="text"], input[type="file"], button {
+            width: 50%;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .btn-sherlock {
+            background-color: red;
+            color: white;
+            padding: 10px;
+        }
+        .scoreboard {
+            margin-top: 20px;
+            border: 1px solid #000;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Jogo do Sherlock 5.0 - Otimizado</h1>
+
+    <!-- Upload de Dados -->
+    <h2>Faça upload dos dados (CSV):</h2>
+    <input type="file" id="fileInput" />
+    <button id="btnCarregarDados">Carregar Dados</button>
+    <p id="statusUpload"></p>
+
+    <!-- Treinamento do Modelo -->
+    <h2>Treinar/Atualizar Modelo:</h2>
+    <button id="btnTreinarModelo">Treinar/Atualizar Modelo</button>
+
+    <!-- Barra de progresso para treinamento -->
+    <div class="progress-container">
+        <div class="progress-bar" id="progressBar">0%</div>
+    </div>
+    <p id="statusTreinamento"></p>
+
+    <!-- Carregar Modelo Salvo -->
+    <h2>Carregar Modelo Salvo</h2>
+    <input type="file" id="modelJson" accept=".json"/>
+    <input type="file" id="modelWeights" accept=".bin"/>
+    <button id="btnCarregarModelo">Carregar Modelo</button>
+
+    <!-- Jogar com Sherlock -->
+    <h2>Jogar com Sherlock</h2>
+    <button id="btnJogarComModelo">Jogar</button>
+
+    <!-- Ciclo de Previsões do Sherlock -->
+    <h2>Ciclo de Previsões Sherlock (50 palpites):</h2>
+    <button id="btnIniciarCiclo">Iniciar Ciclo de Previsões</button>
+
+    <!-- Checkbox para Jogo Infinito -->
+    <label>
+        <input type="checkbox" id="jogoInfinitoCheckbox"> Jogo Infinito
+    </label>
+
+    <!-- Exibir o gráfico de desempenho -->
+    <div id="graficoDesempenho"></div>
+    <div class="progress-bar" id="progressBarCiclo">0%</div>
+
+    <!-- Placar das Gerações -->
+    <div class="scoreboard" id="scoreboard">
+        <h3>Placar das Gerações</h3>
+        <ul id="geracoesRanking"></ul>
+
+        <!-- Resultados dos Palpites -->
+        <h3>Resultados dos Palpites:</h3>
+        <div id="resultadosCiclo"></div>
+    </div>
+
+    <!-- TensorFlow JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis"></script>
+
+    <script>
+        let dados = [];
+        let model; 
+        let treinando = false;
+        let cicloRodando = false;
+        const numCiclos = 50;
+        let palpites = [];
+        let jogoInfinito = false;
+        let campeoes = [];
+        let geracaoAtual = 1;
+        let pontosGeracoes = [];
+
+        // Listener para o checkbox de Jogo Infinito
+        document.getElementById('jogoInfinitoCheckbox').addEventListener('change', function(event) {
+            jogoInfinito = event.target.checked;
+        });
+
+        // Função para carregar dados do CSV
+        document.getElementById('btnCarregarDados').addEventListener('click', carregarDados);
+
+        function carregarDados() {
+            const input = document.getElementById('fileInput').files[0];
+            if (!input) {
+                alert("Por favor, selecione um arquivo CSV.");
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                const text = event.target.result;
+                processarCSV(text);
+                document.getElementById("statusUpload").innerText = "Dados carregados com sucesso!";
+            };
+            reader.readAsText(input);
+        }
+
+        // Função para processar o CSV
+        function processarCSV(text) {
+            const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
+            dados = [];
+
+            linhas.forEach((linha) => {
+                const valores = linha.split(",");
+                const bolas = valores.slice(2, 17).map(Number);
+                if (bolas.length === 15 && bolas.every(num => !isNaN(num))) {
+                    dados.push({ bolas });
+                }
+            });
+            if (dados.length === 0) {
+                alert("Nenhum dado válido encontrado!");
+            }
+        }
+
+        // Função para criar o modelo do Sherlock
+        async function criarModelo() {
+            if (!model) {
+                model = tf.sequential();
+                model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [15] }));
+                model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
+                model.add(tf.layers.dense({ units: 15, activation: 'sigmoid' }));
+                model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
+            }
+        }
+
+        // Função para treinar o modelo do Sherlock
+        document.getElementById('btnTreinarModelo').addEventListener('click', treinarModelo);
+
+        async function treinarModelo() {
+            if (dados.length === 0) {
+                alert("Carregue os dados primeiro!");
+                return;
+            }
+            if (treinando) {
+                alert("O modelo já está sendo treinado.");
+                return;
+            }
+            treinando = true;
+            await criarModelo();
+
+            const xs = tf.tensor2d(dados.map(d => d.bolas.map(bola => bola / 25)));
+            const ys = tf.tensor2d(dados.map(d => d.bolas.map(bola => bola / 25)));
+
+            const numEpocas = 100;
+            await model.fit(xs, ys, {
+                epochs: numEpocas,
+                callbacks: {
+                    onEpochEnd: (epoch, logs) => {
+                        const progresso = Math.floor(((epoch + 1) / numEpocas) * 100);
+                        document.getElementById('progressBar').style.width = progresso + '%';
+                        document.getElementById('progressBar').innerText = progresso + '%';
+                        document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1} concluída. Erro: ${logs.loss.toFixed(6)}`;
+                    }
+                }
+            });
+
+            treinando = false;
+            alert("Treinamento concluído!");
+        }
+
+        // Função para carregar o modelo salvo
+        document.getElementById('btnCarregarModelo').addEventListener('click', carregarModelo);
+
+        async function carregarModelo() {
+            const jsonUpload = document.getElementById('modelJson').files[0];
+            const weightsUpload = document.getElementById('modelWeights').files[0];
+
+            if (jsonUpload && weightsUpload) {
+                model = await tf.loadLayersModel(tf.io.browserFiles([jsonUpload, weightsUpload]));
+                alert("Modelo carregado com sucesso!");
+            } else {
+                alert("Por favor, carregue ambos os arquivos .json e .bin!");
+            }
+        }
+
+        // Função para jogar com o modelo carregado
+        document.getElementById('btnJogarComModelo').addEventListener('click', jogarComModelo);
+
+        function jogarComModelo() {
+            if (!model) {
+                alert("Por favor, carregue o modelo antes de jogar!");
+                return;
+            }
+
+            const penultimoConcurso = dados[dados.length - 2]?.bolas.map(bola => bola / 25);
+            if (!penultimoConcurso) {
+                alert("Erro: Não foi possível acessar os dados para gerar os palpites.");
+                return;
+            }
+
+            const input = tf.tensor2d([penultimoConcurso]);
+            const predicao = model.predict(input).dataSync();
+            const bolasPrevistas = Array.from(predicao).map(p => Math.round(p * 25)).slice(0, 15);
+
+            exibirResultados(bolasPrevistas);
+        }
+
+        // Função para exibir os palpites gerados
+        function exibirResultados(palpites) {
+            const resultadosDiv = document.getElementById('resultadosCiclo');
+            resultadosDiv.innerHTML = "<strong>Palpites do Sherlock:</strong> " + palpites.join(", ");
+        }
+
+        // Função para iniciar o ciclo de previsões
+        document.getElementById('btnIniciarCiclo').addEventListener('click', iniciarCiclo);
+
+        async function iniciarCiclo() {
+            if (cicloRodando) {
+                alert("O ciclo já está em andamento.");
+                return;
+            }
+
+            cicloRodando = true;
+            let progressoCiclo = 0;
+            document.getElementById('progressBarCiclo').style.width = '0%';
+            document.getElementById('progressBarCiclo').innerText = '0%';
+
+            for (let i = 0; i < numCiclos; i++) {
+                const penultimoConcurso = dados[dados.length - 2]?.bolas.map(bola => bola / 25);
+                const input = tf.tensor2d([penultimoConcurso]);
+                const predicao = model.predict(input).dataSync();
+                const bolasPrevistas = Array.from(predicao).map(p => Math.round(p * 25)).slice(0, 15);
+                
+                exibirResultados(bolasPrevistas);
+
+                progressoCiclo = Math.floor(((i + 1) / numCiclos) * 100);
+                document.getElementById('progressBarCiclo').style.width = progressoCiclo + '%';
+                document.getElementById('progressBarCiclo').innerText = progressoCiclo + '%';
+
+                await new Promise(resolve => setTimeout(resolve, 500)); // Simula o tempo de espera
+            }
+
+            cicloRodando = false;
+            alert("Ciclo de previsões concluído!");
+        }
+    </script>
+</body>
+</html>
