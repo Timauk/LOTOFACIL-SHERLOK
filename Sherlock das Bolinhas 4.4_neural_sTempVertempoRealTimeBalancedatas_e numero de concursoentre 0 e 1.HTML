@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sherlock das Bolinhas 5.0</title>
+    <title>Sherlock das Bolinhas 4.0</title>
     <style>
         .progress-container {
             width: 100%;
@@ -80,87 +80,189 @@
    
 
     <script>
-        let dados = [];
+       let dados = [];
         let model; 
         let treinando = false;
         let cicloRodando = false;
         const numCiclos = 50;
         let palpites = [];
-        let dadosOriginais = []; // Para armazenar os valores originais
-        let dadosNormalizados = []; // Para armazenar os dados normalizados
 
-      
-function carregarDados() {
-    const input = document.getElementById('fileInput').files[0];
-    if (!input) {
-        alert("Por favor, selecione um arquivo CSV.");
+        function carregarDados() {
+            const input = document.getElementById('fileInput').files[0];
+            if (!input) {
+                alert("Por favor, selecione um arquivo CSV.");
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                const text = event.target.result;
+                processarCSV(text);
+                document.getElementById("statusUpload").innerText = "Dados carregados com sucesso!";
+            };
+            reader.readAsText(input);
+        }
+
+        function processarCSV(text) {
+            const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
+            dados = [];
+
+            // Preparando variáveis para normalizar dados
+            let concursoMin = Infinity;
+            let concursoMax = -Infinity;
+            let dataMin = Infinity;
+            let dataMax = -Infinity;
+
+            // Primeira passada para calcular os limites de normalização (Min-Max)
+            linhas.forEach(linha => {
+                const valores = linha.split(",");
+
+                // Número do concurso
+                const concurso = Number(valores[0]);
+
+                // Data do sorteio
+                const dataSorteio = new Date(valores[1].split("/").reverse().join("-")).getTime();
+
+                // Atualizar limites
+                if (concurso < concursoMin) concursoMin = concurso;
+                if (concurso > concursoMax) concursoMax = concurso;
+                if (dataSorteio < dataMin) dataMin = dataSorteio;
+                if (dataSorteio > dataMax) dataMax = dataSorteio;
+            });
+
+            // Segunda passada para normalizar os dados
+            linhas.forEach((linha) => {
+                const valores = linha.split(",");
+
+                const concurso = Number(valores[0]);
+                const dataSorteio = new Date(valores[1].split("/").reverse().join("-")).getTime();
+                const bolas = valores.slice(2, 17).map(Number);
+
+                if (bolas.length === 15 && bolas.every(num => !isNaN(num))) {
+                    // Normalizar o concurso e a data usando Min-Max
+                    const concursoNormalizado = (concurso - concursoMin) / (concursoMax - concursoMin);
+                    const dataNormalizada = (dataSorteio - dataMin) / (dataMax - dataMin);
+
+                    // Adicionar os dados normalizados ao array
+                    dados.push({ concurso: concursoNormalizado, dataSorteio: dataNormalizada, bolas });
+                }
+            });
+
+            if (dados.length === 0) {
+                alert("Nenhum dado válido encontrado!");
+            }
+        }
+
+       // Função para normalizar os dados
+function normalizarDados(dados) {
+    // Pega o número máximo de concurso
+    const maxConcurso = Math.max(...dados.map(d => d.concurso));
+
+    // Normaliza o número do concurso e a data
+    return dados.map(d => {
+        // Normalizando o número do concurso
+        const concursoNormalizado = d.concurso / maxConcurso;
+
+        // Normalizando a data como timestamp (entre 0 e 1)
+        const timestamp = new Date(d.dataSorteio.split('/').reverse().join('-')).getTime();
+        const minDate = new Date(dados[0].dataSorteio.split('/').reverse().join('-')).getTime();
+        const maxDate = new Date(dados[dados.length - 1].dataSorteio.split('/').reverse().join('-')).getTime();
+        const dataNormalizada = (timestamp - minDate) / (maxDate - minDate);
+
+        // Retorna o objeto com os valores normalizados
+        return {
+            ...d,
+            concurso: concursoNormalizado,
+            dataSorteio: dataNormalizada,
+            bolas: d.bolas.map(bola => bola / 25) // Normalizando bolas (entre 0 e 1)
+        };
+    });
+}
+async function iniciarCiclo() {
+    if (cicloRodando) {
+        alert("Ciclo já está rodando.");
         return;
     }
-    const reader = new FileReader();
-    reader.onload = function (event) {
-        const text = event.target.result;
-        processarCSV(text);  // Processa o CSV após carregado
-        document.getElementById("statusUpload").innerText = "Dados carregados com sucesso!";
-    };
-    reader.readAsText(input);
+    cicloRodando = true;
+
+    document.getElementById('progressBarCiclo').style.width = '0%';
+    document.getElementById('progressBarCiclo').innerText = '0%';
+    document.getElementById('statusCiclo').innerText = 'Ciclo iniciado. Gerando palpites...';
+
+    for (let cicloAtual = 0; cicloAtual < numCiclos; cicloAtual++) {
+        const concursoAtual = dados[dados.length - 1];
+        gerarPalpitesComConcurso(concursoAtual);
+
+        const progressoCiclo = Math.floor((cicloAtual / numCiclos) * 100);
+        document.getElementById('progressBarCiclo').style.width = progressoCiclo + '%';
+        document.getElementById('progressBarCiclo').innerText = progressoCiclo + '%';
+        document.getElementById('statusCiclo').innerText = `Ciclo ${cicloAtual + 1} concluído`;
+
+        await new Promise(resolve => setTimeout(resolve, 500)); // Pausa para não travar o navegador
+    }
+
+    exibirResultados();
+    cicloRodando = false;
+    document.getElementById('statusCiclo').innerText = "Ciclo de previsões concluído!";
 }
+async function treinarModelo() {
+    if (dados.length === 0) {
+        alert("Carregue os dados primeiro!");
+        return;
+    }
+    if (treinando) {
+        alert("O modelo já está sendo treinado.");
+        return;
+    }
+    treinando = true;
+    await criarModelo();
 
-function processarCSV(text) {
-    const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
-    dadosOriginais = [];
-    dadosNormalizados = [];
+    // Normalizando os dados
+    const dadosNormalizados = normalizarDados(dados);
 
-    // Preparando variáveis para normalizar dados
-    let concursoMin = Infinity;
-    let concursoMax = -Infinity;
-    let dataMin = Infinity;
-    let dataMax = -Infinity;
+    // Preparar séries temporais com os dados normalizados e uma janela de 10 concursos
+    const { sequencias, labels } = prepararSeriesTemporais(dadosNormalizados, 10);
 
-    // Primeira passada para calcular os limites de normalização (Min-Max)
-    linhas.forEach(linha => {
-        const valores = linha.split(",");
-        const concurso = Number(valores[0]);
-        const dataSorteio = new Date(valores[1].split("/").reverse().join("-")).getTime();
+    // Criando tensores para treinamento
+    const xs = tf.tensor3d(sequencias);
+    const ys = tf.tensor2d(labels);
 
-        // Atualizar limites para normalização
-        if (concurso < concursoMin) concursoMin = concurso;
-        if (concurso > concursoMax) concursoMax = concurso;
-        if (dataSorteio < dataMin) dataMin = dataSorteio;
-        if (dataSorteio > dataMax) dataMax = dataSorteio;
-    });
+    const numEpocas = 100;
 
-    // Segunda passada para processar os dados e normalizar
-    linhas.forEach(linha => {
-        const valores = linha.split(",");
-        const concurso = Number(valores[0]);
-        const dataSorteio = new Date(valores[1].split("/").reverse().join("-")).getTime();
-        const bolas = valores.slice(2, 17).map(Number);
+    // Variável para armazenar o histórico de perdas
+    const lossValues = [];
 
-        if (bolas.length === 15 && bolas.every(num => !isNaN(num))) {
-            // Armazenar os dados exatos
-            dadosOriginais.push({
-                concurso: concurso,
-                dataSorteio: new Date(dataSorteio).toLocaleDateString("pt-BR"), // Data original
-                bolas: bolas
-            });
+    // Realiza o treinamento e exibe os gráficos de perda e visualização dos pesos
+    await model.fit(xs, ys, {
+        epochs: numEpocas,
+        callbacks: {
+            onEpochEnd: (epoch, logs) => {
+                console.log(`Epoch ${epoch}: loss = ${logs.loss}`);
+                document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1} concluída. Erro: ${logs.loss.toFixed(6)}`;
 
-            // Normalizar o concurso e a data usando Min-Max
-            const concursoNormalizado = (concurso - concursoMin) / (concursoMax - concursoMin);
-            const dataNormalizada = (dataSorteio - dataMin) / (dataMax - dataMin);
+                const progresso = Math.floor(((epoch + 1) / numEpocas) * 100);
+                document.getElementById('progressBar').style.width = progresso + '%';
+                document.getElementById('progressBar').innerText = progresso + '%';
 
-            // Armazenar os dados normalizados
-            dadosNormalizados.push({
-                concurso: concursoNormalizado,
-                dataSorteio: dataNormalizada,
-                bolas: bolas.map(bola => bola / 25) // Normalizando bolas entre 0 e 1
-            });
+                // Salva o valor da perda para exibir no gráfico
+                lossValues.push({ epoch: epoch + 1, loss: logs.loss });
+
+                const surface = { name: 'Loss History', tab: 'Treinamento' };
+                tfvis.render.linechart(surface, { values: lossValues, series: ['Loss'] }, {
+                    xLabel: 'Epoch',
+                    yLabel: 'Loss',
+                    width: 400,
+                    height: 300
+                });
+
+                const weightsSurface = { name: `Pesos - Epoch ${epoch + 1}`, tab: 'Pesos' };
+                tfvis.show.layer(weightsSurface, model.getLayer(undefined, 0));
+            }
         }
     });
 
-    console.log("Dados Originais:", dadosOriginais);
-    console.log("Dados Normalizados:", dadosNormalizados);
+    treinando = false;
+    alert("Treinamento concluído!");
 }
-
 
 // Função para preparar séries temporais
 function prepararSeriesTemporais(dados, janela) {
@@ -209,7 +311,7 @@ async function criarModelo() {
 }
 
 async function treinarModelo() {
-    if (dadosNormalizados.length === 0) {
+    if (dados.length === 0) {
         alert("Carregue os dados primeiro!");
         return;
     }
@@ -220,8 +322,8 @@ async function treinarModelo() {
     treinando = true;
     await criarModelo();
 
-    // Não recrie dadosNormalizados, use o que foi criado durante o upload
-    // const dadosNormalizados = normalizarDados(dados); // REMOVA ESTA LINHA
+    // Normalizando os dados
+    const dadosNormalizados = normalizarDados(dados);
 
     // Preparar séries temporais com os dados normalizados e uma janela de 10 concursos
     const { sequencias, labels } = prepararSeriesTemporais(dadosNormalizados, 10);
@@ -232,19 +334,41 @@ async function treinarModelo() {
 
     const numEpocas = 100;
 
+    // Container para os gráficos de perda e camadas
+    const surface = { name: 'Gráficos de Treinamento', tab: 'Treinamento' };
+
+    // Variável para armazenar o histórico de perdas
+    const lossValues = [];
+
+    // Realiza o treinamento e exibe os gráficos de perda e visualização dos pesos
     await model.fit(xs, ys, {
         epochs: numEpocas,
         callbacks: {
             onEpochEnd: (epoch, logs) => {
-                console.log(`Epoch ${epoch}: loss = ${logs.loss}, accuracy = ${logs.acc}`);
-                
-                // Atualiza o progresso da barra
+                // Exibe o erro da época atual no console e na interface
+                console.log(`Epoch ${epoch}: loss = ${logs.loss}`);
+                document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1} concluída. Erro: ${logs.loss.toFixed(6)}`;
+
+                // Atualiza a barra de progresso
                 const progresso = Math.floor(((epoch + 1) / numEpocas) * 100);
                 document.getElementById('progressBar').style.width = progresso + '%';
                 document.getElementById('progressBar').innerText = progresso + '%';
-                
-                // Atualiza o status do treinamento
-                document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1} concluída. Erro: ${logs.loss.toFixed(6)}`;
+
+                // Salva o valor da perda para exibir no gráfico
+                lossValues.push({ epoch: epoch + 1, loss: logs.loss });
+
+                // Exibe o gráfico de perda
+                const surface = { name: 'Loss History', tab: 'Treinamento' }; 
+                tfvis.render.linechart(surface, { values: lossValues, series: ['Loss'] }, {
+                    xLabel: 'Epoch',
+                    yLabel: 'Loss',
+                    width: 400,
+                    height: 300
+                });
+
+                // Visualizar os pesos da primeira camada após cada época
+                const weightsSurface = { name: `Pesos - Epoch ${epoch + 1}`, tab: 'Pesos' };
+                tfvis.show.layer(weightsSurface, model.getLayer(undefined, 0));  // Mostra a primeira camada (LSTM)
             }
         }
     });
@@ -252,7 +376,6 @@ async function treinarModelo() {
     treinando = false;
     alert("Treinamento concluído!");
 }
-
 
 
 

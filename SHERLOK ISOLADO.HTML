@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sherlock AI - Loteria com Reforço</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis"></script>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #jogo-container { display: flex; justify-content: center; margin: 20px 0; }
+        .banca { background-color: lightgray; padding: 10px; border: 2px solid black; text-align: center; }
+        .jogadores { display: flex; justify-content: space-around; }
+        .log { margin-left: 20px; }
+        .log p { font-size: 14px; }
+    </style>
+</head>
+<body>
+    <h1>Sherlock AI - Loteria com Aprendizado por Reforço</h1>
+
+    <!-- Botões de controle -->
+    <button id="btnAbrirCSV">Abrir CSV</button>
+    <button id="btnTreinarModelo">Treinar Modelo</button>
+    <button id="btnSalvarModelo">Salvar Modelo</button>
+    <button id="btnJogar">Jogar</button>
+
+    <!-- Container do Jogo -->
+    <div id="jogo-container">
+        <div id="banca" class="banca">🏦 Banca</div>
+        <div id="jogadores" class="jogadores">
+            <!-- Ícones de jogadores serão criados dinamicamente aqui -->
+        </div>
+        <div id="log" class="log">
+            <!-- Log será criado dinamicamente aqui -->
+        </div>
+    </div>
+
+    <!-- Container dos Gráficos -->
+    <div id="grafico-container">
+        <!-- Gráfico de performance -->
+        <div id="grafico"></div>
+    </div>
+
+    <script>
+        let dados = [];
+        let model;
+
+        // Parte 3: Processar CSV
+        document.getElementById('btnAbrirCSV').addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.csv';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = (event) => processarCSV(event.target.result);
+                reader.readAsText(file);
+            };
+            input.click();
+        });
+
+        function processarCSV(text) {
+            const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
+            dados = [];
+
+            linhas.forEach((linha) => {
+                const valores = linha.split(",");
+
+                // Número do concurso
+                const concurso = Number(valores[0]);
+
+                // Data do sorteio
+                const dataSorteio = new Date(valores[1].split("/").reverse().join("-")).getTime(); // Timestamp
+
+                // Bolas sorteadas
+                const bolas = valores.slice(2, 17).map(Number);
+
+                // Verificar validade
+                if (bolas.length === 15 && bolas.every(num => !isNaN(num))) {
+                    dados.push({ concurso, dataSorteio, bolas });
+                }
+            });
+
+            if (dados.length === 0) {
+                alert("Nenhum dado válido encontrado!");
+            } else {
+                alert("CSV carregado com sucesso!");
+            }
+        }
+
+        // Parte 5.5: Treinar modelo (Usar uma rede neural)
+        async function treinarModelo() {
+            model = tf.sequential();
+            model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [17] }));
+            model.add(tf.layers.dense({ units: 64, activation: 'relu' }));
+            model.add(tf.layers.dense({ units: 15, activation: 'softmax' }));
+            model.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy' });
+
+            const { sequencias, labels } = prepararSeriesTemporais(dados, 10);
+            const xs = tf.tensor2d(sequencias);
+            const ys = tf.tensor2d(labels);
+
+            await model.fit(xs, ys, {
+                epochs: 50,
+                callbacks: tfvis.show.fitCallbacks(
+                    { name: 'Performance do Modelo' },
+                    ['loss'],
+                    { height: 200, callbacks: ['onEpochEnd'] }
+                )
+            });
+
+            alert("Modelo treinado com sucesso!");
+        }
+
+        document.getElementById('btnTreinarModelo').addEventListener('click', treinarModelo);
+
+        // Função para preparar séries temporais (adicionando concurso e data como features)
+            function prepararSeriesTemporais(dados, janela) {
+        let sequencias = [];
+        let labels = [];
+
+        for (let i = 0; i < dados.length - janela; i++) {
+        let sequencia = dados.slice(i, i + janela); // Pega uma janela de concursos
+        let label = dados[i + janela].bolas; // O alvo é o próximo conjunto de bolas sorteadas
+        sequencias.push(sequencia.flatMap(d => [...d.bolas, d.concurso, d.dataSorteio])); // Flatten the data
+        labels.push(label);
+    }
+
+    return { sequencias, labels };
+}
+        // Parte 8: Jogo animado com ícones
+        function iniciarJogo() {
+            const jogadoresDiv = document.getElementById('jogadores');
+            jogadoresDiv.innerHTML = '';
+
+            // Criar ícones de jogadores
+            for (let i = 0; i < 10; i++) {
+                const jogadorDiv = document.createElement('div');
+                jogadorDiv.className = 'jogador';
+                jogadorDiv.innerHTML = `🤖 Sherlock ${i + 1}`;
+                jogadoresDiv.appendChild(jogadorDiv);
+            }
+
+            // Mostrar log e gráficos em tempo real durante o jogo
+            atualizarLog("Jogo iniciado!");
+        }
+
+        function atualizarLog(mensagem) {
+            const logDiv = document.getElementById('log');
+            const logMsg = document.createElement('p');
+            logMsg.textContent = mensagem;
+            logDiv.appendChild(logMsg);
+        }
+
+        document.getElementById('btnJogar').addEventListener('click', iniciarJogo);
+
+    </script>
+</body>
+</html>
