@@ -91,6 +91,7 @@
     </div>
 
     <!-- TensorFlow JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis"></script>
 
@@ -105,6 +106,35 @@
         let campeoes = [];
         let geracaoAtual = 1;
         let pontosGeracoes = [];
+        let scene, camera, renderer, sphere;
+
+        //Função para configurar a cena em Three.js
+function initThreeJS() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.z = 5;
+
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const geometry = new THREE.SphereGeometry(1, 32, 32);
+    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    sphere = new THREE.Mesh(geometry, material);
+    scene.add(sphere);
+
+    animate();
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    sphere.rotation.x += 0.01;
+    sphere.rotation.y += 0.01;
+    renderer.render(scene, camera);
+}
+
+initThreeJS();
+
 
     // Listener para o checkbox de Jogo Infinito
     document.getElementById('jogoInfinitoCheckbox').addEventListener('change', function(event) {
@@ -127,22 +157,30 @@
             reader.readAsText(input);
         }
 
-        // Função para processar o CSV
-    function processarCSV(text) {
-            const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
-            dados = [];
+        // Função para processar e normalizar os dados, incluindo data e número de concursos
+function processarCSV(text) {
+    const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
+    dados = [];
 
-            linhas.forEach((linha) => {
-                const valores = linha.split(",");
-                const bolas = valores.slice(2, 17).map(Number);
-                if (bolas.length === 15 && bolas.every(num => !isNaN(num))) {
-                    dados.push({ bolas });
-                }
-            });
-            if (dados.length === 0) {
-                alert("Nenhum dado válido encontrado!");
-            }
+    // Detectar o número de colunas e dinamicamente identificar as relevantes
+    linhas.forEach((linha) => {
+        const valores = linha.split(",");
+        
+        const numeroConcurso = Number(valores[0]);  // Coluna 1: Número do concurso
+        const dataSorteio = new Date(valores[1].split("/").reverse().join("-")).getTime();  // Coluna 2: Data do sorteio (transforma em timestamp)
+        const bolas = valores.slice(2, 17).map(Number);  // Colunas de bolas sorteadas
+
+        if (bolas.length === 15 && bolas.every(num => !isNaN(num))) {
+            // Adicionar o número do concurso e a data como parte dos dados
+            dados.push({ numeroConcurso, dataSorteio, bolas });
         }
+    });
+
+    if (dados.length === 0) {
+        alert("Nenhum dado válido encontrado!");
+    }
+}
+
 
         // Função para criar o modelo do Sherlock
     async function criarModelo() {
@@ -155,38 +193,117 @@
             }
         }
 
-    // Função para treinar o modelo do Sherlock       
-    async function treinarModelo() {
-            if (dados.length === 0) {
-                alert("Carregue os dados primeiro!");
-                return;
+        async function treinarModelo() {
+    if (dados.length === 0) {
+        alert("Carregue os dados primeiro!");
+        return;
+    }
+    if (treinando) {
+        alert("O modelo já está sendo treinado.");
+        return;
+    }
+
+    treinando = true;
+
+    const numeroDeBolas = dados[0].bolas.length;  // Detectar o número de bolas dinamicamente
+    if (!model) {
+        model = tf.sequential();
+
+        // Entrada combinada de bolas, número do concurso e data
+        model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [numeroDeBolas + 2] }));  // +2 para incluir número de concurso e data
+        model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
+        model.add(tf.layers.dense({ units: numeroDeBolas, activation: 'sigmoid' }));  // Saída com o número de bolas
+        model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
+    }
+
+    // Normalizando os números de concursos e datas (para valores entre 0 e 1)
+    const maxConcurso = Math.max(...dados.map(d => d.numeroConcurso));
+    const minData = Math.min(...dados.map(d => d.dataSorteio));
+    const maxData = Math.max(...dados.map(d => d.dataSorteio));
+
+    const xs = tf.tensor2d(dados.map(d => [
+        ...d.bolas.map(bola => bola / 25),
+        d.numeroConcurso / maxConcurso,
+        (d.dataSorteio - minData) / (maxData - minData)
+    ]));
+
+    const ys = tf.tensor2d(dados.map(d => d.bolas.map(bola => bola / 25)));  // Saída com as bolas sorteadas
+
+    // Setup da visualização 3D em Three.js
+    if (!scene) {
+        initThreeJS();
+    }
+
+    // Variável para armazenar o histórico de erros (loss)
+    const lossValues = [];
+
+    // Treinamento do modelo
+    await model.fit(xs, ys, {
+        epochs: 100,
+        callbacks: {
+            onEpochEnd: (epoch, logs) => {
+                const progresso = Math.floor(((epoch + 1) / 100) * 100);
+                document.getElementById('progressBar').style.width = progresso + '%';
+                document.getElementById('progressBar').innerText = progresso + '%';
+                document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1} concluída. Erro: ${logs.loss.toFixed(6)}`;
+
+                // Adicionar a loss ao histórico e atualizar o gráfico 3D
+                const loss = logs.loss;
+                lossValues.push({ epoch: epoch + 1, loss });
+                atualizarEsfera3D(loss);
+
+                // Renderizar gráfico da perda em Three.js
+                const surface = { name: 'Loss History', tab: 'Treinamento' };
+                tfvis.render.linechart(surface, { values: lossValues, series: ['Loss'] }, {
+                    xLabel: 'Epoch',
+                    yLabel: 'Loss',
+                    width: 400,
+                    height: 300
+                });
             }
-            if (treinando) {
-                alert("O modelo já está sendo treinado.");
-                return;
-            }
-            treinando = true;
-            await criarModelo();
-
-            const xs = tf.tensor2d(dados.map(d => d.bolas.map(bola => bola / 25)));
-            const ys = tf.tensor2d(dados.map(d => d.bolas.map(bola => bola / 25)));
-
-            const numEpocas = 100;
-            await model.fit(xs, ys, {
-                epochs: numEpocas,
-                callbacks: {
-                    onEpochEnd: (epoch, logs) => {
-                        const progresso = Math.floor(((epoch + 1) / numEpocas) * 100);
-                        document.getElementById('progressBar').style.width = progresso + '%';
-                        document.getElementById('progressBar').innerText = progresso + '%';
-                        document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1} concluída. Erro: ${logs.loss.toFixed(6)}`;
-                    }
-                }
-            });
-
-            treinando = false;
-            alert("Treinamento concluído!");
         }
+    });
+
+    treinando = false;
+    alert("Treinamento concluído!");
+}
+
+// Função para inicializar Three.js
+function initThreeJS() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.z = 5;
+
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const geometry = new THREE.SphereGeometry(1, 32, 32);
+    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    sphere = new THREE.Mesh(geometry, material);
+    scene.add(sphere);
+
+    animate();
+}
+
+// Função para renderizar a animação da esfera 3D
+function animate() {
+    requestAnimationFrame(animate);
+    sphere.rotation.x += 0.01;
+    sphere.rotation.y += 0.01;
+    renderer.render(scene, camera);
+}
+
+// Função para atualizar a esfera 3D com base na loss
+function atualizarEsfera3D(loss) {
+    const scaleFactor = 1 + loss;  // Ajustar o tamanho da esfera com base na loss
+    sphere.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
+    const colorFactor = new THREE.Color(`hsl(${(1 - loss) * 120}, 100%, 50%)`);
+    sphere.material.color.set(colorFactor);
+}
+
+
 
         // Função para carregar o modelo salvo
         async function carregarModelo() {
@@ -264,13 +381,25 @@
     }
 
     // Função para aplicar a lógica de recompensa e punição
-    function aplicarRecompensaEPunicao(palpite, acertos) {
-        let pontos = 0;
-        if (acertos === 13) pontos += 50; // Exemplo de pontuação para 13 acertos
-        if (acertos === 14) pontos += 100; // Exemplo de pontuação para 14 acertos
-        if (acertos === 15) pontos += 200; // Exemplo de pontuação para 15 acertos
-        return pontos;
+function aplicarRecompensaEPunicao(palpite, acertos) {
+    let pontos = 0;
+
+    // Recompensa por acertos
+    if (acertos === 13) {
+        pontos += 50; // Exemplo de pontuação para 13 acertos
+    } else if (acertos === 14) {
+        pontos += 100; // Exemplo de pontuação para 14 acertos
+    } else if (acertos === 15) {
+        pontos += 200; // Exemplo de pontuação para 15 acertos
     }
+
+    // Punição por baixo desempenho
+    if (acertos < 13) {
+        pontos -= 20; // Punição por menos de 13 acertos
+    }
+
+    return pontos;
+}
 
     // Função para verificar acertos do Sherlock
     function verificarAcertos(palpite) {

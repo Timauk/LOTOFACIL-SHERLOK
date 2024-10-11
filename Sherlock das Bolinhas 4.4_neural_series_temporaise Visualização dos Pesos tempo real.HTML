@@ -103,47 +103,7 @@
             reader.readAsText(input);
         }
 
-        function processarCSV(text) {
-            const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
-            dados = [];
-
-            linhas.forEach((linha) => {
-                const valores = linha.split(",");
-
-                // Número do concurso (mantido como número)
-                const concurso = Number(valores[0]);
-
-                // Data do sorteio (convertida para um formato numérico)
-                const dataSorteio = new Date(valores[1].split("/").reverse().join("-")).getTime(); // Transformar em timestamp
-
-                // Bolas sorteadas (mantidas como números)
-                const bolas = valores.slice(2, 17).map(Number);
-
-                // Verificar se todos os valores são válidos
-                if (bolas.length === 15 && bolas.every(num => !isNaN(num))) {
-                    dados.push({ concurso, dataSorteio, bolas });
-                }
-            });
-
-            if (dados.length === 0) {
-                alert("Nenhum dado válido encontrado!");
-            }
-        }
-
-        // Função para preparar séries temporais
-        function prepararSeriesTemporais(dados, janela) {
-            let sequencias = [];
-            let labels = [];
-
-            for (let i = 0; i < dados.length - janela; i++) {
-                let sequencia = dados.slice(i, i + janela); // Pega uma janela de concursos
-                let label = dados[i + janela].bolas; // O alvo é o próximo conjunto de bolas sorteadas
-                sequencias.push(sequencia.map(d => [...d.bolas, d.concurso, d.dataSorteio]));
-                labels.push(label);
-            }
-
-            return { sequencias, labels };
-        }
+        
 
         async function criarModelo() {
     if (!model) {
