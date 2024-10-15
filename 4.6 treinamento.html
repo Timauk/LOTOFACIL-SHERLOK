@@ -104,49 +104,51 @@
             }));
         }
 
-        // Função para treinar o modelo
-        async function treinarModelo() {
-            if (dados.length === 0) {
-                alert("Carregue os dados primeiro!");
-                return;
+       // Função para treinar o modelo
+async function treinarModelo() {
+    if (dados.length === 0) {
+        alert("Carregue os dados primeiro!");
+        return;
+    }
+
+    if (treinando) {
+        alert("O modelo já está sendo treinado.");
+        return;
+    }
+
+    treinando = true;
+
+    const numeroDeBolas = dados[0].bolas.length;
+    
+    if (!model) {
+        model = tf.sequential();
+        model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [numeroDeBolas + 2] }));  
+        model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
+        model.add(tf.layers.dense({ units: numeroDeBolas, activation: 'sigmoid' }));  
+        model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
+    }
+
+    const dadosNormalizados = normalizarDados(dados);
+    const xs = tf.tensor2d(dadosNormalizados.map(d => [...d.bolas, d.numeroConcurso, d.dataSorteio]));
+    const ys = tf.tensor2d(dadosNormalizados.map(d => d.bolas));
+
+    await model.fit(xs, ys, {
+        epochs: 100,
+        validationSplit: 0.1,  // Usar 10% dos dados para validação
+        callbacks: {
+            onEpochEnd: (epoch, logs) => {
+                const progresso = Math.floor(((epoch + 1) / 100) * 100);
+                document.getElementById('progressBar').style.width = progresso + '%';
+                document.getElementById('progressBar').innerText = progresso + '%';
+                document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1} concluída. Erro: ${logs.loss.toFixed(6)} | Validação: ${logs.val_loss.toFixed(6)}`;
             }
-
-            if (treinando) {
-                alert("O modelo já está sendo treinado.");
-                return;
-            }
-
-            treinando = true;
-
-            const numeroDeBolas = dados[0].bolas.length;
-            
-            if (!model) {
-                model = tf.sequential();
-                model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [numeroDeBolas + 2] }));  
-                model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
-                model.add(tf.layers.dense({ units: numeroDeBolas, activation: 'sigmoid' }));  
-                model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
-            }
-
-            const dadosNormalizados = normalizarDados(dados);
-            const xs = tf.tensor2d(dadosNormalizados.map(d => [...d.bolas, d.numeroConcurso, d.dataSorteio]));
-            const ys = tf.tensor2d(dadosNormalizados.map(d => d.bolas));
-
-            await model.fit(xs, ys, {
-                epochs: 100,
-                callbacks: {
-                    onEpochEnd: (epoch, logs) => {
-                        const progresso = Math.floor(((epoch + 1) / 100) * 100);
-                        document.getElementById('progressBar').style.width = progresso + '%';
-                        document.getElementById('progressBar').innerText = progresso + '%';
-                        document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1} concluída. Erro: ${logs.loss.toFixed(6)}`;
-                    }
-                }
-            });
-
-            treinando = false;
-            alert("Treinamento concluído!");
         }
+    });
+
+    treinando = false;
+    alert("Treinamento concluído!");
+}
+
 
         // Função para salvar o modelo treinado
         async function salvarModelo() {
