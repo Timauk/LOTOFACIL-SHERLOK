@@ -91,6 +91,24 @@
                 alert("Nenhum dado válido encontrado!");
             }
         }
+        function verificarDados(dados) {
+    for (let d of dados) {
+        if (d.bolas.some(num => isNaN(num) || num < 0 || num > 1)) {
+            console.error("Erro nos dados:", d);
+            return false;
+        }
+        if (isNaN(d.numeroConcurso) || isNaN(d.dataSorteio)) {
+            console.error("Erro no número do concurso ou data:", d);
+            return false;
+        }
+    }
+    return true;
+}
+const dadosNormalizados = normalizarDados(dados);
+if (!verificarDados(dadosNormalizados)) {
+    alert("Os dados têm problemas. Verifique o console.");
+    return;
+}
 
         // Função para normalizar os dados
         function normalizarDados(dados) {
@@ -123,7 +141,8 @@ async function treinarModelo() {
     
     if (!model) {
         model = tf.sequential();
-        model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [numeroDeBolas + 2] }));  
+        model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [numeroDeBolas + 2] }));
+        model.add(tf.layers.batchNormalization());  // Normalização de lotes
         model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
         model.add(tf.layers.dense({ units: numeroDeBolas, activation: 'sigmoid' }));  
         model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
@@ -149,7 +168,11 @@ async function treinarModelo() {
 
                 // Adicionando log para visualização do gráfico
                 logs.push({ epoch: epoch + 1, loss: log.loss, val_loss: log.val_loss });
-                tfvis.show.history(surface, logs, ['loss', 'val_loss']);  // Atualizando o gráfico
+                tfvis.show.history(surface, logs, ['loss', 'val_loss']);  
+                // Adicionando log para visualização do gráfico
+                logs.push({ epoch: epoch + 1, loss: log.loss, val_loss: log.val_loss });
+                tfvis.show.history(surface, logs, ['loss', 'val_loss'], { height: 200, width: 400 });// Atualizando o gráfico
+
 
                 // Verificando se o modelo parou de aprender (critério de parada)
                 const earlyStopPatience = 10;  // Número de épocas sem melhoria antes de parar
