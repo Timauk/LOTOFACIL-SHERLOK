@@ -40,6 +40,16 @@
             border: 1px solid #000;
             padding: 10px;
         }
+        #log {
+            white-space: pre-wrap;
+            border: 1px solid #ddd;
+            padding: 10px;
+            height: 200px;
+            overflow-y: scroll;
+        }
+        canvas {
+            width: 100% !important;
+        }
     </style>
 </head>
 <body>
@@ -61,27 +71,48 @@
     </div>
     <p id="statusTreinamento"></p>
 
+    <!-- Botão para carregar o modelo salvo -->
+    <h2>Carregar Modelo Salvo</h2>
+    <input type="file" id="modelJson" accept=".json"/>
+    <input type="file" id="modelWeights" accept=".bin"/>
+    <button onclick="carregarModelo()">Carregar Modelo</button>
+
+    <!-- Botão para jogar com o modelo carregado -->
+    <h2> Jogar com Sherlock</h2>
+    <button onclick="jogarComModelo()">Jogar</button>
+
     <!-- Ciclo de Previsões do Sherlock -->
     <h2>Ciclo de Previsões Sherlock (50 palpites):</h2>
     <button onclick="iniciarCiclo()">Iniciar Ciclo de Previsões</button>
+
+    <!-- Adicionar checkbox para Jogo Infinito -->
+    <label>
+        <input type="checkbox" id="jogoInfinito"> Jogo Infinito
+    </label>
+
+    <!-- Exibir o gráfico de desempenho -->
+    <div id="graficoDesempenho"></div>
 
     <!-- Botão para salvar o modelo -->
     <h2>Salvar o Modelo Treinado</h2>
     <button onclick="salvarModelo()">Salvar Modelo</button>
 
-    <!-- Botão para carregar o modelo treinado -->
-    <h2>Carregar o Modelo Treinado</h2>
-    <button onclick="carregarModelo()">Carregar Modelo</button>
-
     <!-- Resultados dos Palpites -->
     <h3>Resultados dos Palpites:</h3>
     <div id="resultadosCiclo"></div>
 
+    <!-- Gráfico de Desempenho -->
+    <div id="graficoDesempenho"></div>
+    
     <!-- Placar das Gerações -->
     <div class="scoreboard" id="scoreboard">
         <h3>Placar das Gerações</h3>
         <ul id="geracoesRanking"></ul>
     </div>
+
+    <!-- Área de Logs -->
+    <h3>Log de Atividades</h3>
+    <div id="log"></div>
 
     <!-- TensorFlow JS -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
@@ -98,7 +129,9 @@
         let campeoes = [];
         let geracaoAtual = 1;
         let ranking = [];
-
+        let geracoes = [];
+        let pontosGeracoes = [];
+       
         // Função para carregar dados do CSV
         function carregarDados() {
             const input = document.getElementById('fileInput').files[0];
@@ -110,7 +143,7 @@
             reader.onload = function (event) {
                 const text = event.target.result;
                 processarCSV(text);
-                document.getElementById("statusUpload").innerText = "Dados carregados com sucesso!";
+                log(`Dados carregados com sucesso!`);
             };
             reader.readAsText(input);
         }
@@ -120,7 +153,6 @@
             const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
             dados = [];
 
-            // Processa os dados do CSV e os organiza
             linhas.forEach((linha) => {
                 const valores = linha.split(",");
                 const bolas = valores.slice(2, 17).map(Number);
@@ -168,133 +200,108 @@
                         const progresso = Math.floor(((epoch + 1) / numEpocas) * 100);
                         document.getElementById('progressBar').style.width = progresso + '%';
                         document.getElementById('progressBar').innerText = progresso + '%';
-                        document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1} concluída. Erro: ${logs.loss.toFixed(6)}`;
+                        document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1}/${numEpocas}, perda: ${logs.loss.toFixed(4)}`;
+                        log(`Época ${epoch + 1}/${numEpocas}, perda: ${logs.loss.toFixed(4)}`);
                     }
                 }
             });
 
             treinando = false;
+            log("Treinamento concluído!");
             alert("Treinamento concluído!");
         }
 
-        // Função para gerar palpites do Sherlock
-        function gerarPalpites() {
-            const penultimoConcurso = dados[dados.length - 2].bolas;
-            for (let i = 0; i < numCiclos; i++) {
-                const input = tf.tensor2d([penultimoConcurso.map(bola => bola / 25)]);
-                const predicao = model.predict(input).dataSync();
-                const bolasPrevistas = Array.from(predicao).map(p => Math.round(p * 25)).slice(0, 15);
-                palpites.push(bolasPrevistas);
-            }
-        }
-
-        // Função para iniciar ciclo de previsões
-        async function iniciarCiclo() {
-            if (cicloRodando) {
-                alert("Ciclo já está rodando.");
+        // Função para salvar modelo
+        async function salvarModelo() {
+            if (!model) {
+                alert("Não há modelo treinado para salvar!");
                 return;
             }
-            cicloRodando = true;
-            document.getElementById('progressBarCiclo').style.width = '0%';
-            document.getElementById('progressBarCiclo').innerText = '0%';
-            document.getElementById('statusCiclo').innerText = 'Ciclo iniciado. Gerando palpites...';
-
-            gerarPalpites();
-
-            for (let cicloAtual = 0; cicloAtual < numCiclos; cicloAtual++) {
-                const progressoCiclo = Math.floor((cicloAtual / numCiclos) * 100);
-                document.getElementById('progressBarCiclo').style.width = progressoCiclo + '%';
-                document.getElementById('progressBarCiclo').innerText = progressoCiclo + '%';
-                document.getElementById('statusCiclo').innerText = `Ciclo ${cicloAtual + 1} concluído`;
-
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
-
-            atualizarPlacar();
-            cicloRodando = false;
-            document.getElementById('statusCiclo').innerText = "Ciclo de previsões concluído!";
+            const saveResult = await model.save('downloads://modelo_sherlock');
+            alert("Modelo salvo com sucesso!");
         }
 
-        // Função para exibir o placar das gerações
-        function atualizarPlacar() {
-            const ul = document.getElementById("geracoesRanking");
-            ul.innerHTML = '';
-            campeoes.forEach(campeao => {
-                const li = document.createElement("li");
-                li.innerText = `Geração ${campeao.geracao}: ${campeao.pontos} pontos`;
-                ul.appendChild(li);
-            });
-        }
-
-               function salvarModelo() {
-            model.save('downloads://modelo-sherlock').then(() => {
-                alert("Modelo salvo com sucesso!");
-            }).catch((err) => {
-                console.error("Erro ao salvar o modelo: ", err);
-            });
-        }
-
+        // Função para carregar o modelo salvo
         async function carregarModelo() {
-            model = await tf.loadLayersModel('downloads://modelo-sherlock/model.json');
+            const jsonInput = document.getElementById('modelJson').files[0];
+            const weightsInput = document.getElementById('modelWeights').files[0];
+            if (!jsonInput || !weightsInput) {
+                alert("Por favor, selecione o arquivo do modelo e os pesos.");
+                return;
+            }
+            model = await tf.loadLayersModel(tf.io.browserFiles([jsonInput, weightsInput]));
             alert("Modelo carregado com sucesso!");
         }
 
-        // Função para aplicar a lógica de recompensa e punição
-        function aplicarRecompensaEPunicao(palpite, acertos) {
-            let pontos = 0;
-            if (acertos === 13) pontos += 50; // Exemplo de pontuação para 13 acertos
-            if (acertos === 14) pontos += 100; // Exemplo de pontuação para 14 acertos
-            if (acertos === 15) pontos += 200; // Exemplo de pontuação para 15 acertos
-            return pontos;
-        }
-
-        // Função para realizar a competição entre gerações
-        function competicaoEntreGeracoes() {
-            let maxPontos = -Infinity;
-            let campeao = null;
-
-            // Gerações de Sherlock jogam e comparam resultados
-            for (let geracao = 1; geracao <= geracaoAtual; geracao++) {
-                let pontos = 0;
-                for (let i = 0; i < palpites.length; i++) {
-                    const acertos = verificarAcertos(palpites[i]);
-                    pontos += aplicarRecompensaEPunicao(palpites[i], acertos);
-                }
-
-                // Verifica quem é o campeão da geração
-                if (pontos > maxPontos) {
-                    maxPontos = pontos;
-                    campeao = { geracao, pontos };
-                }
-
-                // Armazenar resultado da geração atual
-                campeoes.push(campeao);
+        // Função para jogar com o modelo
+        async function jogarComModelo() {
+            if (!model) {
+                alert("Carregue ou treine um modelo primeiro!");
+                return;
             }
 
-            atualizarPlacar();
+            const ultimoConcurso = dados[dados.length - 1].bolas.map(bola => bola / 25);
+            const xs = tf.tensor2d([ultimoConcurso]);
+            const predicoes = await model.predict(xs).array();
+            const palpites = predicoes[0].map(p => Math.round(p * 25));
+            
+            log(`Palpites: ${palpites.join(', ')}`);
+            alert(`Palpites do Sherlock: ${palpites.join(', ')}`);
         }
 
-        // Função para verificar acertos do Sherlock
-        function verificarAcertos(palpite) {
-            const concursoAtual = dados[dados.length - 1].bolas;
-            const acertos = palpite.filter(num => concursoAtual.includes(num)).length;
-            return acertos;
-        }
-
-        // Checkbox de jogo infinito
-        document.getElementById('jogoInfinitoCheckbox').addEventListener('change', function(event) {
-            jogoInfinito = event.target.checked;
-        });
-
-        // Loop do jogo infinito
-        async function iniciarJogoInfinito() {
-            while (jogoInfinito) {
-                iniciarCiclo();
-                competicaoEntreGeracoes();
-                await new Promise(resolve => setTimeout(resolve, 1000));
+        // Função para gerar palpites
+        function gerarPalpites() {
+            palpites = [];
+            for (let i = 0; i < numCiclos; i++) {
+                let palpite = Array.from({ length: 15 }, () => Math.floor(Math.random() * 25) + 1);
+                palpites.push(palpite);
             }
         }
+
+        // Função para iniciar o ciclo de previsões
+        async function iniciarCiclo() {
+            if (cicloRodando) {
+                alert("O ciclo já está rodando.");
+                return;
+            }
+
+            cicloRodando = true;
+            palpites = [];
+            gerarPalpites();
+
+            for (let i = 0; i < numCiclos; i++) {
+                const concurso = dados[dados.length - 1].bolas;
+                const palpite = palpites[i];
+                const acertos = palpite.filter(b => concurso.includes(b)).length;
+
+                if (acertos >= 12) {
+                    campeoes.push({ ciclo: i + 1, acertos });
+                }
+
+                atualizarPlacar();
+            }
+            cicloRodando = false;
+
+            alert("Ciclo de previsões concluído.");
+        }
+
+        // Função para atualizar o placar
+        function atualizarPlacar() {
+            const placarHTML = document.getElementById('geracoesRanking');
+            let lista = "";
+            campeoes.forEach((campeao, idx) => {
+                lista += `<li>Geracao ${idx + 1}: ${campeao.acertos} acertos</li>`;
+            });
+            placarHTML.innerHTML = lista;
+        }
+
+        // Função para registrar logs
+        function log(mensagem) {
+            const logContainer = document.getElementById('log');
+            logContainer.innerHTML += mensagem + "\n";
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
     </script>
-
 </body>
 </html>

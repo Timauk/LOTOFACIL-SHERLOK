@@ -1,0 +1,78 @@
+<!DOCTYPE html> 
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Jogos de Loteria</title>
+    <style>
+        #progress-bar {
+            width: 100%;
+            height: 20px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Gerador de Jogos de Loteria</h1>
+    <label for="quantidade">Quantidade de jogos:</label>
+    <input type="number" id="quantidade" value="100" min="1">
+    <button id="gerar">Gerar</button>
+    <button id="salvar">Salvar como CSV</button>
+    
+    <progress id="progress-bar" value="0" max="100" style="display:none;"></progress>
+
+    <script>
+        function gerarDadosFicticios(numDados, onProgress) {
+            const dadosFicticios = [];
+            for (let i = 0; i < numDados; i++) {
+                const dia = (i % 30) + 1;
+                const dataSorteio = `${dia.toString().padStart(2, '0')}/09/2024`; // Data fictícia
+                const bolas = Array.from({ length: 25 }, (_, index) => index + 1)
+                                    .sort(() => Math.random() - 0.5) // Embaralha os números
+                                    .slice(0, 15); // Seleciona os 15 primeiros
+                dadosFicticios.push({ concurso: i + 1, dataSorteio, bolas });
+                onProgress((i + 1) / numDados * 100); // Atualiza o progresso
+            }
+            return dadosFicticios;
+        }
+
+        function salvarComoCSV(dados) {
+            const linhas = [
+                "Concurso,Data Sorteio,Bola1,Bola2,Bola3,Bola4,Bola5,Bola6,Bola7,Bola8,Bola9,Bola10,Bola11,Bola12,Bola13,Bola14,Bola15"
+            ];
+            dados.forEach(({ concurso, dataSorteio, bolas }) => {
+                linhas.push(`${concurso},${dataSorteio},${bolas.join(',')}`);
+            });
+            const csvContent = linhas.join("\n");
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'jogos_loteria.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        document.getElementById('gerar').addEventListener('click', () => {
+            const quantidade = parseInt(document.getElementById('quantidade').value, 10);
+            const progressBar = document.getElementById('progress-bar');
+            progressBar.style.display = 'block';
+            progressBar.value = 0;
+
+            const dadosGerados = gerarDadosFicticios(quantidade, (progress) => {
+                progressBar.value = progress;
+            });
+
+            salvarComoCSV(dadosGerados);
+            progressBar.style.display = 'none'; // Oculta a barra após salvar
+        });
+
+        document.getElementById('salvar').addEventListener('click', () => {
+            const quantidade = parseInt(document.getElementById('quantidade').value, 10);
+            const dadosGerados = gerarDadosFicticios(quantidade, () => {});
+            salvarComoCSV(dadosGerados);
+        });
+    </script>
+</body>
+</html>

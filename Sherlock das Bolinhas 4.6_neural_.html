@@ -91,6 +91,7 @@
     </div>
 
     <!-- TensorFlow JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis"></script>
 
@@ -105,6 +106,35 @@
         let campeoes = [];
         let geracaoAtual = 1;
         let pontosGeracoes = [];
+        let scene, camera, renderer, sphere;
+
+        //Função para configurar a cena em Three.js
+function initThreeJS() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.z = 5;
+
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const geometry = new THREE.SphereGeometry(1, 32, 32);
+    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    sphere = new THREE.Mesh(geometry, material);
+    scene.add(sphere);
+
+    animate();
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    sphere.rotation.x += 0.01;
+    sphere.rotation.y += 0.01;
+    renderer.render(scene, camera);
+}
+
+initThreeJS();
+
 
     // Listener para o checkbox de Jogo Infinito
     document.getElementById('jogoInfinitoCheckbox').addEventListener('change', function(event) {
@@ -131,6 +161,29 @@
 function processarCSV(text) {
     const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
     dados = [];
+        // Função para processar e normalizar os dados, incluindo data e número de concursos
+function processarCSV(text) {
+    const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
+    dados = [];
+
+    // Detectar o número de colunas e dinamicamente identificar as relevantes
+    linhas.forEach((linha) => {
+        const valores = linha.split(",");
+        
+        const numeroConcurso = Number(valores[0]);  // Coluna 1: Número do concurso
+        const dataSorteio = new Date(valores[1].split("/").reverse().join("-")).getTime();  // Coluna 2: Data do sorteio (transforma em timestamp)
+        const bolas = valores.slice(2, 17).map(Number);  // Colunas de bolas sorteadas
+
+        if (bolas.length === 15 && bolas.every(num => !isNaN(num))) {
+            // Adicionar o número do concurso e a data como parte dos dados
+            dados.push({ numeroConcurso, dataSorteio, bolas });
+        }
+    });
+
+    if (dados.length === 0) {
+        alert("Nenhum dado válido encontrado!");
+    }
+}
 
     // Detectar o número de colunas e dinamicamente identificar as relevantes
     linhas.forEach((linha) => {
@@ -292,13 +345,25 @@ function processarCSV(text) {
     }
 
     // Função para aplicar a lógica de recompensa e punição
-    function aplicarRecompensaEPunicao(palpite, acertos) {
-        let pontos = 0;
-        if (acertos === 13) pontos += 50; // Exemplo de pontuação para 13 acertos
-        if (acertos === 14) pontos += 100; // Exemplo de pontuação para 14 acertos
-        if (acertos === 15) pontos += 200; // Exemplo de pontuação para 15 acertos
-        return pontos;
+function aplicarRecompensaEPunicao(palpite, acertos) {
+    let pontos = 0;
+
+    // Recompensa por acertos
+    if (acertos === 13) {
+        pontos += 50; // Exemplo de pontuação para 13 acertos
+    } else if (acertos === 14) {
+        pontos += 100; // Exemplo de pontuação para 14 acertos
+    } else if (acertos === 15) {
+        pontos += 200; // Exemplo de pontuação para 15 acertos
     }
+
+    // Punição por baixo desempenho
+    if (acertos < 13) {
+        pontos -= 20; // Punição por menos de 13 acertos
+    }
+
+    return pontos;
+}
 
     // Função para verificar acertos do Sherlock
     function verificarAcertos(palpite) {
