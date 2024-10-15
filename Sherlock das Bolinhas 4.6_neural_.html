@@ -157,10 +157,7 @@ initThreeJS();
             reader.readAsText(input);
         }
 
-        // Função para processar e normalizar os dados, incluindo data e número de concursos
-function processarCSV(text) {
-    const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
-    dados = [];
+     
         // Função para processar e normalizar os dados, incluindo data e número de concursos
 function processarCSV(text) {
     const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
@@ -202,7 +199,7 @@ function processarCSV(text) {
     if (dados.length === 0) {
         alert("Nenhum dado válido encontrado!");
     }
-}
+
 
 
         // Função para criar o modelo do Sherlock
