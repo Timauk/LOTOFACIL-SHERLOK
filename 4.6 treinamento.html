@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>O Aprendiz - Treinamento de Sherlock</title>
+    <style>
+        .progress-container {
+            width: 100%;
+            background-color: #f3f3f3;
+            border: 1px solid #ccc;
+            height: 20px;
+            margin: 10px 0;
+        }
+        .progress-bar {
+            height: 100%;
+            width: 0;
+            background-color: #4caf50;
+            text-align: center;
+            color: white;
+            line-height: 20px;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <h1>O Aprendiz - Treinamento de Sherlock</h1>
+
+    <!-- Upload de Dados para Treinamento -->
+    <h2>Faça upload dos dados (CSV) para treinar:</h2>
+    <input type="file" id="fileInput" />
+    <button onclick="carregarDados()">Carregar Dados</button>
+    <p id="statusUpload"></p>
+
+    <!-- Treinamento do Modelo -->
+    <h2>Treinar Modelo:</h2>
+    <button onclick="treinarModelo()">Treinar Modelo</button>
+
+    <!-- Barra de progresso para treinamento -->
+    <div class="progress-container">
+        <div class="progress-bar" id="progressBar">0%</div>
+    </div>
+    <p id="statusTreinamento"></p>
+
+    <!-- Botão para salvar o modelo treinado -->
+    <h2>Salvar o Modelo Treinado</h2>
+    <button onclick="salvarModelo()">Salvar Modelo</button>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis"></script>
+
+    <script>
+        let dados = [];
+        let model;
+        let treinando = false;
+
+        // Função para carregar dados do CSV
+        function carregarDados() {
+            const input = document.getElementById('fileInput').files[0];
+            if (!input) {
+                alert("Por favor, selecione um arquivo CSV.");
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                const text = event.target.result;
+                processarCSV(text);
+                document.getElementById("statusUpload").innerText = "Dados carregados com sucesso!";
+            };
+            reader.readAsText(input);
+        }
+
+        // Função para processar e normalizar os dados
+        function processarCSV(text) {
+            const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
+            dados = [];
+
+            linhas.forEach((linha) => {
+                const valores = linha.split(",");
+                const numeroConcurso = Number(valores[0]);  
+                const dataSorteio = new Date(valores[1].split("/").reverse().join("-")).getTime();  
+                const bolas = valores.slice(2, 17).map(Number);  
+
+                if (bolas.length === 15 && bolas.every(num => !isNaN(num))) {
+                    dados.push({ numeroConcurso, dataSorteio, bolas });
+                }
+            });
+
+            if (dados.length === 0) {
+                alert("Nenhum dado válido encontrado!");
+            }
+        }
+
+        // Função para normalizar os dados
+        function normalizarDados(dados) {
+            const maxConcurso = Math.max(...dados.map(d => d.numeroConcurso));
+            const minData = Math.min(...dados.map(d => d.dataSorteio));
+            const maxData = Math.max(...dados.map(d => d.dataSorteio));
+
+            return dados.map(d => ({
+                bolas: d.bolas.map(bola => bola / 25),
+                numeroConcurso: d.numeroConcurso / maxConcurso,
+                dataSorteio: (d.dataSorteio - minData) / (maxData - minData)
+            }));
+        }
+
+        // Função para treinar o modelo
+        async function treinarModelo() {
+            if (dados.length === 0) {
+                alert("Carregue os dados primeiro!");
+                return;
+            }
+
+            if (treinando) {
+                alert("O modelo já está sendo treinado.");
+                return;
+            }
+
+            treinando = true;
+
+            const numeroDeBolas = dados[0].bolas.length;
+            
+            if (!model) {
+                model = tf.sequential();
+                model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [numeroDeBolas + 2] }));  
+                model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
+                model.add(tf.layers.dense({ units: numeroDeBolas, activation: 'sigmoid' }));  
+                model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
+            }
+
+            const dadosNormalizados = normalizarDados(dados);
+            const xs = tf.tensor2d(dadosNormalizados.map(d => [...d.bolas, d.numeroConcurso, d.dataSorteio]));
+            const ys = tf.tensor2d(dadosNormalizados.map(d => d.bolas));
+
+            await model.fit(xs, ys, {
+                epochs: 100,
+                callbacks: {
+                    onEpochEnd: (epoch, logs) => {
+                        const progresso = Math.floor(((epoch + 1) / 100) * 100);
+                        document.getElementById('progressBar').style.width = progresso + '%';
+                        document.getElementById('progressBar').innerText = progresso + '%';
+                        document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1} concluída. Erro: ${logs.loss.toFixed(6)}`;
+                    }
+                }
+            });
+
+            treinando = false;
+            alert("Treinamento concluído!");
+        }
+
+        // Função para salvar o modelo treinado
+        async function salvarModelo() {
+            const saveResult = await model.save('downloads://modelo-aprendiz');
+            console.log("Modelo salvo com sucesso:", saveResult);
+        }
+    </script>
+</body>
+</html>

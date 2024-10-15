@@ -186,23 +186,18 @@ function processarCSV(text) {
 }
 
 
-    // Detectar o número de colunas e dinamicamente identificar as relevantes
-    linhas.forEach((linha) => {
-        const valores = linha.split(",");
-        
-        const numeroConcurso = Number(valores[0]);  // Coluna 1: Número do concurso
-        const dataSorteio = new Date(valores[1].split("/").reverse().join("-")).getTime();  // Coluna 2: Data do sorteio (transforma em timestamp)
-        const bolas = valores.slice(2, 17).map(Number);  // Colunas de bolas sorteadas
+// Função para normalizar os dados
+function normalizarDados(dados) {
+    const maxConcurso = Math.max(...dados.map(d => d.numeroConcurso));
+    const minData = Math.min(...dados.map(d => d.dataSorteio));
+    const maxData = Math.max(...dados.map(d => d.dataSorteio));
 
-        if (bolas.length === 15 && bolas.every(num => !isNaN(num))) {
-            // Adicionar o número do concurso e a data como parte dos dados
-            dados.push({ numeroConcurso, dataSorteio, bolas });
-        }
-    });
-
-    if (dados.length === 0) {
-        alert("Nenhum dado válido encontrado!");
-    }
+    return dados.map(d => ({
+        bolas: d.bolas.map(bola => bola / 25),  // Normalizando as bolas (supondo que os números vão de 1 a 25)
+        numeroConcurso: d.numeroConcurso / maxConcurso,  // Normalizando os concursos
+        dataSorteio: (d.dataSorteio - minData) / (maxData - minData)  // Normalizando as datas
+    }));
+}
 
 
 
@@ -219,18 +214,22 @@ function processarCSV(text) {
 
         async function treinarModelo() {
     if (dados.length === 0) {
-      alert("Carregue os dados primeiro!");
-      return;
+        alert("Carregue os dados primeiro!");
+        return;
     }
+
     if (treinando) {
-      alert("O modelo já está sendo treinado.");
-      return;
+        alert("O modelo já está sendo treinado.");
+        return;
     }
+
     treinando = true;
 
+    // Detectar o número de bolas dinamicamente
     const numeroDeBolas = dados[0].bolas.length;
+    
     if (!model) {
-      model = tf.sequential();
+        model = tf.sequential();
 
       // Entrada combinada de bolas, número do concurso e data
       model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [numeroDeBolas + 2] })); // +2 para número de concurso e data
