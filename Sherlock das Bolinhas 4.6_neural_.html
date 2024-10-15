@@ -218,50 +218,99 @@ function processarCSV(text) {
 
         async function treinarModelo() {
     if (dados.length === 0) {
-        alert("Carregue os dados primeiro!");
-        return;
+      alert("Carregue os dados primeiro!");
+      return;
     }
     if (treinando) {
-        alert("O modelo já está sendo treinado.");
-        return;
+      alert("O modelo já está sendo treinado.");
+      return;
     }
-    
     treinando = true;
 
-    const numeroDeBolas = dados[0].bolas.length;  // Detectar o número de bolas dinamicamente
+    const numeroDeBolas = dados[0].bolas.length;
     if (!model) {
-        model = tf.sequential();
-        
-        // Entrada combinada de bolas, número do concurso e data
-        model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [numeroDeBolas + 2] }));  // +2 para incluir número de concurso e data
-        model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
-        model.add(tf.layers.dense({ units: numeroDeBolas, activation: 'sigmoid' }));  // Saída com o número de bolas
-        model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
+      model = tf.sequential();
+
+      // Entrada combinada de bolas, número do concurso e data
+      model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [numeroDeBolas + 2] })); // +2 para número de concurso e data
+      model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
+      model.add(tf.layers.dense({ units: 64, activation: 'relu' }));  // Primeira camada adicional
+      model.add(tf.layers.dense({ units: 32, activation: 'relu' }));  // Segunda camada adicional
+      model.add(tf.layers.dense({ units: 16, activation: 'relu' }));  // Terceira camada adicional
+      model.add(tf.layers.dense({ units: numeroDeBolas, activation: 'sigmoid' }));  // Saída com o número de bolas
+      model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
     }
 
-    // Normalizando os números de concursos e datas (para valores entre 0 e 1)
+    // Normalizar os números de concursos e datas (entre 0 e 1)
     const maxConcurso = Math.max(...dados.map(d => d.numeroConcurso));
     const minData = Math.min(...dados.map(d => d.dataSorteio));
     const maxData = Math.max(...dados.map(d => d.dataSorteio));
 
     const xs = tf.tensor2d(dados.map(d => [
-        ...d.bolas.map(bola => bola / 25), 
-        d.numeroConcurso / maxConcurso, 
-        (d.dataSorteio - minData) / (maxData - minData)
+      ...d.bolas.map(bola => bola / 25), 
+      d.numeroConcurso / maxConcurso, 
+      (d.dataSorteio - minData) / (maxData - minData)
     ]));
 
     const ys = tf.tensor2d(dados.map(d => d.bolas.map(bola => bola / 25)));  // Saída com as bolas sorteadas
 
+    // Gráficos para visualizar o progresso
+    const surface = { name: 'Gráficos de Treinamento', tab: 'Treinamento' };
+    const lossValues = [];
+
+    // Treinamento com 10% de controle
+    const numEpocas = 100;
+    const controlePercentual = 0.1;
+    const epocasTreinamento = Math.floor(numEpocas * (1 - controlePercentual));  // 90% para treinamento normal
+    const epocasControle = numEpocas - epocasTreinamento;  // 10% para controle
+
+    // Função para adicionar ruído aos dados (controle)
+    function adicionarRuido(tensor) {
+      return tensor.add(tf.randomNormal(tensor.shape, 0, 0.1));  // Adiciona ruído com desvio padrão 0.1
+    }
+
+    // Treinamento normal (90%)
     await model.fit(xs, ys, {
-        epochs: 100,
-        callbacks: {
-            onEpochEnd: (epoch, logs) => {
-                const progresso = Math.floor(((epoch + 1) / 100) * 100);
-                document.getElementById('progressBar').style.width = progresso + '%';
-                document.getElementById('progressBar').innerText = progresso + '%';
-                document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1} concluída. Erro: ${logs.loss.toFixed(6)}`;
-            }
+      epochs: epocasTreinamento,
+      callbacks: {
+        onEpochEnd: (epoch, logs) => {
+          const progresso = Math.floor(((epoch + 1) / numEpocas) * 100);
+          document.getElementById('progressBar').style.width = progresso + '%';
+          document.getElementById('progressBar').innerText = progresso + '%';
+          document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1} concluída. Erro: ${logs.loss.toFixed(6)}`;
+
+          // Armazenar perda (loss) e renderizar o gráfico
+          lossValues.push({ epoch: epoch + 1, loss: logs.loss });
+          tfvis.render.linechart(surface, { values: lossValues, series: ['Loss'] }, {
+            xLabel: 'Epoch',
+            yLabel: 'Loss',
+            width: 400,
+            height: 300
+          });
         }
+      }
+    });
+
+    // Treinamento de controle (10%) - adiciona ruído
+    const xsControle = adicionarRuido(xs);
+    await model.fit(xsControle, ys, {
+      epochs: epocasControle,
+      callbacks: {
+        onEpochEnd: (epoch, logs) => {
+          const progresso = Math.floor(((epoch + 1 + epocasTreinamento) / numEpocas) * 100);
+          document.getElementById('progressBar').style.width = progresso + '%';
+          document.getElementById('progressBar').innerText = progresso + '%';
+          document.getElementById('statusTreinamento').innerText = `Época ${epoch + 1 + epocasTreinamento} concluída. Erro: ${logs.loss.toFixed(6)}`;
+
+          lossValues.push({ epoch: epoch + 1 + epocasTreinamento, loss: logs.loss });
+          tfvis.render.linechart(surface, { values: lossValues, series: ['Loss'] }, {
+            xLabel: 'Epoch',
+            yLabel: 'Loss',
+            width: 400,
+            height: 300
+          });
+        }
+      }
     });
 
     treinando = false;
