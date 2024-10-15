@@ -158,7 +158,8 @@ initThreeJS();
         }
 
      
-        // Função para processar e normalizar os dados, incluindo data e número de concursos
+       
+// Função para processar e normalizar os dados, incluindo data e número de concursos
 function processarCSV(text) {
     const linhas = text.trim().split("\n").slice(1); // Ignorar cabeçalho
     dados = [];
@@ -179,8 +180,11 @@ function processarCSV(text) {
 
     if (dados.length === 0) {
         alert("Nenhum dado válido encontrado!");
+    } else {
+        console.log("Dados carregados e processados corretamente.");
     }
 }
+
 
     // Detectar o número de colunas e dinamicamente identificar as relevantes
     linhas.forEach((linha) => {
